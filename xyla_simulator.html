@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>XYLA — AI Mirror Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --neon-cyan: #00f5ff;
+      --neon-pink: #ff00aa;
+      --neon-gold: #ffd700;
+      --neon-green: #00ff88;
+      --neon-purple: #bf00ff;
+      --bg: #020408;
+      --bg2: #060d14;
+      --bg3: #0a1520;
+      --glass: rgba(0, 245, 255, 0.04);
+      --glass-border: rgba(0, 245, 255, 0.15);
+      --text: rgba(255,255,255,0.92);
+      --text-dim: rgba(255,255,255,0.45);
+      --panel-radius: 2px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Rajdhani', sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      cursor: default;
+    }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* Grid bg */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,245,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,245,255,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #app {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 280px 1fr 280px;
+      grid-template-rows: 70px 1fr 180px;
+      height: 100vh;
+      gap: 8px;
+      padding: 8px;
+    }
+
+    /* ─── HEADER ─── */
+    #header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--glass-border);
+      position: relative;
+    }
+
+    #header::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 10%;
+      width: 80%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+      animation: scanH 3s ease-in-out infinite;
+    }
+
+    @keyframes scanH {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    .logo {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 28px;
+      letter-spacing: 8px;
+      color: var(--neon-cyan);
+      text-shadow: 0 0 20px var(--neon-cyan), 0 0 40px rgba(0,245,255,0.4);
+    }
+
+    .logo span {
+      color: var(--neon-pink);
+      text-shadow: 0 0 20px var(--neon-pink), 0 0 40px rgba(255,0,170,0.4);
+    }
+
+    #clock {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: var(--neon-cyan);
+      letter-spacing: 3px;
+      text-shadow: 0 0 10px var(--neon-cyan);
+    }
+
+    #date-display {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      text-align: right;
+    }
+
+    .header-right { text-align: right; }
+
+    /* ─── PANELS ─── */
+    .panel {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--panel-radius);
+      padding: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+      opacity: 0.6;
+    }
+
+    .panel-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: var(--neon-cyan);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      opacity: 0.8;
+    }
+
+    /* ─── LEFT PANEL: CALENDAR + STATUS ─── */
+    #left-panel {
+      grid-column: 1;
+      grid-row: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #calendar-panel {
+      flex: 0 0 auto;
+    }
+
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .cal-month {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      color: var(--neon-gold);
+      letter-spacing: 2px;
+      text-shadow: 0 0 8px var(--neon-gold);
+    }
+
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+    }
+
+    .cal-day-name {
+      text-align: center;
+      color: var(--neon-cyan);
+      font-size: 9px;
+      padding: 2px 0;
+      opacity: 0.6;
+    }
+
+    .cal-day {
+      text-align: center;
+      padding: 3px 0;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: var(--text-dim);
+    }
+
+    .cal-day:hover { background: rgba(0,245,255,0.1); color: var(--text); }
+    .cal-day.today {
+      background: rgba(0,245,255,0.15);
+      color: var(--neon-cyan);
+      border: 1px solid rgba(0,245,255,0.4);
+      text-shadow: 0 0 6px var(--neon-cyan);
+    }
+    .cal-day.has-event { color: var(--neon-pink); }
+
+    #events-panel { flex: 0 0 auto; }
+
+    .event-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(0,245,255,0.08);
+    }
+
+    .event-time {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      color: var(--neon-pink);
+      min-width: 42px;
+    }
+
+    .event-name {
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .event-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--neon-cyan);
+      margin-top: 4px;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px var(--neon-cyan);
+    }
+
+    #status-panel { flex: 1; }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(0,245,255,0.06);
+      font-size: 12px;
+    }
+
+    .status-label { color: var(--text-dim); font-size: 11px; letter-spacing: 1px; }
+    .status-val {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      color: var(--neon-green);
+    }
+    .status-val.warn { color: var(--neon-gold); }
+
+    /* ─── CENTER: CAMERA FEED ─── */
+    #center-panel {
+      grid-column: 2;
+      grid-row: 2;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      border: 1px solid var(--glass-border);
+      overflow: hidden;
+    }
+
+    #mirror-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      opacity: 0.85;
+    }
+
+    #mirror-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .mirror-corner {
+      position: absolute;
+      width: 24px; height: 24px;
+      border-color: var(--neon-cyan);
+      border-style: solid;
+      opacity: 0.8;
+    }
+    .mc-tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
+    .mc-tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
+    .mc-bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
+    .mc-br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
+
+    #scan-line {
+      position: absolute;
+      left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+      opacity: 0;
+      pointer-events: none;
+      animation: scanVert 4s ease-in-out infinite;
+    }
+
+    @keyframes scanVert {
+      0% { top: 0; opacity: 0; }
+      5% { opacity: 0.8; }
+      95% { opacity: 0.8; }
+      100% { top: 100%; opacity: 0; }
+    }
+
+    #camera-off {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-dim);
+    }
+
+    .cam-icon {
+      font-size: 48px;
+      opacity: 0.3;
+    }
+
+    #enable-cam-btn {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 10px;
+      letter-spacing: 2px;
+      padding: 10px 20px;
+      background: transparent;
+      border: 1px solid var(--neon-cyan);
+      color: var(--neon-cyan);
+      cursor: pointer;
+      transition: all 0.3s;
+      text-transform: uppercase;
+    }
+
+    #enable-cam-btn:hover {
+      background: rgba(0,245,255,0.1);
+      box-shadow: 0 0 20px rgba(0,245,255,0.3);
+    }
+
+    .face-box {
+      position: absolute;
+      border: 1px solid var(--neon-green);
+      box-shadow: 0 0 10px rgba(0,255,136,0.3);
+      pointer-events: none;
+      transition: all 0.1s;
+    }
+
+    .face-label {
+      position: absolute;
+      top: -18px;
+      left: 0;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 9px;
+      color: var(--neon-green);
+      background: rgba(0,0,0,0.7);
+      padding: 1px 4px;
+      white-space: nowrap;
+    }
+
+    /* Capture flash */
+    #capture-flash {
+      position: absolute;
+      inset: 0;
+      background: white;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .flash-anim { animation: flashAnim 0.4s ease-out forwards; }
+    @keyframes flashAnim {
+      0% { opacity: 0.9; }
+      100% { opacity: 0; }
+    }
+
+    /* ─── RIGHT PANEL ─── */
+    #right-panel {
+      grid-column: 3;
+      grid-row: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Music */
+    #music-panel { flex: 0 0 auto; }
+
+    .music-track {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    .music-artist {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+
+    .music-controls {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+
+    .music-btn {
+      background: transparent;
+      border: 1px solid rgba(0,245,255,0.2);
+      color: var(--text-dim);
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .music-btn:hover { border-color: var(--neon-cyan); color: var(--neon-cyan); box-shadow: 0 0 10px rgba(0,245,255,0.2); }
+    .music-btn.play-btn {
+      width: 40px; height: 40px;
+      border-color: var(--neon-cyan);
+      color: var(--neon-cyan);
+    }
+
+    .progress-bar {
+      height: 2px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 1px;
+      position: relative;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+      border-radius: 1px;
+      width: 35%;
+      transition: width 0.5s linear;
+    }
+
+    .music-waveform {
+      display: flex;
+      gap: 2px;
+      align-items: flex-end;
+      height: 24px;
+      margin-top: 8px;
+    }
+
+    .wave-bar {
+      flex: 1;
+      background: linear-gradient(180deg, var(--neon-cyan), var(--neon-purple));
+      border-radius: 1px;
+      opacity: 0.7;
+      animation: waveAnim 0.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes waveAnim {
+      from { height: 20%; }
+      to { height: 100%; }
+    }
+
+    /* AI Feedback panel */
+    #ai-panel { flex: 1; overflow: hidden; }
+
+    #ai-feedback {
+      height: calc(100% - 24px);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--neon-cyan) transparent;
+    }
+
+    .ai-message {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      border-radius: 2px;
+      font-size: 12px;
+      line-height: 1.5;
+      animation: msgFadeIn 0.3s ease-out;
+    }
+
+    @keyframes msgFadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .ai-message.xyla {
+      background: rgba(0,245,255,0.06);
+      border-left: 2px solid var(--neon-cyan);
+      color: var(--text);
+    }
+
+    .ai-message.user {
+      background: rgba(255,0,170,0.06);
+      border-left: 2px solid var(--neon-pink);
+      color: var(--text-dim);
+    }
+
+    .msg-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 2px;
+      margin-bottom: 3px;
+    }
+
+    .msg-label.xyla { color: var(--neon-cyan); }
+    .msg-label.user { color: var(--neon-pink); }
+
+    .typing-indicator {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+      padding: 8px 10px;
+    }
+
+    .typing-dot {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--neon-cyan);
+      animation: typingBounce 0.8s ease-in-out infinite;
+    }
+
+    .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes typingBounce {
+      0%, 100% { opacity: 0.3; transform: translateY(0); }
+      50% { opacity: 1; transform: translateY(-3px); }
+    }
+
+    /* ─── BOTTOM BAR ─── */
+    #bottom-bar {
+      grid-column: 1 / -1;
+      grid-row: 3;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    /* Voice input */
+    #voice-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .voice-input-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    #text-input {
+      flex: 1;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--glass-border);
+      color: var(--text);
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 2px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #text-input:focus {
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 10px rgba(0,245,255,0.1);
+    }
+
+    #text-input::placeholder { color: var(--text-dim); }
+
+    .action-btn {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 8px;
+      letter-spacing: 1.5px;
+      padding: 8px 12px;
+      background: transparent;
+      border: 1px solid var(--neon-cyan);
+      color: var(--neon-cyan);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .action-btn:hover { background: rgba(0,245,255,0.1); box-shadow: 0 0 15px rgba(0,245,255,0.2); }
+    .action-btn:active { transform: scale(0.97); }
+    .action-btn.pink { border-color: var(--neon-pink); color: var(--neon-pink); }
+    .action-btn.pink:hover { background: rgba(255,0,170,0.1); box-shadow: 0 0 15px rgba(255,0,170,0.2); }
+    .action-btn.gold { border-color: var(--neon-gold); color: var(--neon-gold); }
+    .action-btn.gold:hover { background: rgba(255,215,0,0.1); box-shadow: 0 0 15px rgba(255,215,0,0.2); }
+
+    #mic-btn {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      padding: 0;
+    }
+
+    #mic-btn.listening {
+      border-color: var(--neon-pink);
+      color: var(--neon-pink);
+      box-shadow: 0 0 20px rgba(255,0,170,0.4);
+      animation: micPulse 1s ease-in-out infinite;
+    }
+
+    @keyframes micPulse {
+      0%, 100% { box-shadow: 0 0 10px rgba(255,0,170,0.3); }
+      50% { box-shadow: 0 0 25px rgba(255,0,170,0.7); }
+    }
+
+    /* Quick actions */
+    #actions-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    /* Affirmation panel */
+    #affirmation-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    #affirmation-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--neon-gold);
+      text-align: center;
+      line-height: 1.5;
+      text-shadow: 0 0 15px rgba(255,215,0,0.4);
+      animation: affirmFade 6s ease-in-out infinite;
+      font-style: italic;
+    }
+
+    @keyframes affirmFade {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+
+    /* API key modal */
+    #api-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      backdrop-filter: blur(4px);
+    }
+
+    .modal-box {
+      background: var(--bg2);
+      border: 1px solid var(--neon-cyan);
+      box-shadow: 0 0 40px rgba(0,245,255,0.2);
+      padding: 32px;
+      width: 420px;
+      position: relative;
+    }
+
+    .modal-box::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+    }
+
+    .modal-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 16px;
+      color: var(--neon-cyan);
+      letter-spacing: 3px;
+      margin-bottom: 8px;
+    }
+
+    .modal-sub {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    .modal-input {
+      width: 100%;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--glass-border);
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      padding: 10px 14px;
+      outline: none;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+
+    .modal-input:focus { border-color: var(--neon-cyan); }
+
+    .modal-btn {
+      width: 100%;
+      padding: 12px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 11px;
+      letter-spacing: 2px;
+      background: transparent;
+      border: 1px solid var(--neon-cyan);
+      color: var(--neon-cyan);
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-bottom: 8px;
+    }
+
+    .modal-btn:hover { background: rgba(0,245,255,0.1); box-shadow: 0 0 20px rgba(0,245,255,0.3); }
+
+    .modal-skip {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-dim);
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .modal-skip:hover { color: var(--text); }
+
+    /* Notification toast */
+    #toast {
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      background: var(--bg2);
+      border: 1px solid var(--neon-green);
+      color: var(--neon-green);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      padding: 10px 16px;
+      z-index: 500;
+      opacity: 0;
+      transform: translateX(20px);
+      transition: all 0.3s;
+      pointer-events: none;
+    }
+
+    #toast.show { opacity: 1; transform: translateX(0); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--neon-cyan); border-radius: 2px; }
+
+    /* Screenshot gallery */
+    #gallery {
+      position: fixed;
+      bottom: 200px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 100;
+    }
+
+    .gallery-thumb {
+      width: 60px;
+      height: 45px;
+      object-fit: cover;
+      border: 1px solid var(--neon-pink);
+      cursor: pointer;
+      opacity: 0.8;
+      transition: all 0.2s;
+      transform: scaleX(-1);
+    }
+
+    .gallery-thumb:hover { opacity: 1; box-shadow: 0 0 10px rgba(255,0,170,0.4); }
+
+    .api-note {
+      font-size: 10px;
+      color: var(--text-dim);
+      padding: 4px 8px;
+      background: rgba(255,215,0,0.05);
+      border: 1px solid rgba(255,215,0,0.15);
+      border-radius: 2px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<div id="api-modal">
+  <div class="modal-box">
+    <div class="modal-title">XYLA INIT</div>
+    <p class="modal-sub">Enter your Anthropic API key to activate the AI brain. Xyla will see you, talk to you, and analyse your look.<br><br>Key is stored only in this browser session.</p>
+    <input class="modal-input" type="password" id="api-key-input" placeholder="sk-ant-..." />
+    <button class="modal-btn" onclick="initWithKey()">ACTIVATE XYLA ▶</button>
+    <div class="modal-skip" onclick="initDemo()">Continue in demo mode (no AI)</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="gallery"></div>
+
+<div id="app">
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo">XYL<span>A</span></div>
+    <div style="text-align:center">
+      <div id="clock">00:00:00</div>
+    </div>
+    <div class="header-right">
+      <div id="date-display">Loading...</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:2px;font-family:'Share Tech Mono',monospace;" id="status-dot">● SYSTEM ONLINE</div>
+    </div>
+  </div>
+
+  <!-- LEFT PANEL -->
+  <div id="left-panel">
+    <div class="panel" id="calendar-panel">
+      <div class="panel-title">◈ Calendar</div>
+      <div class="calendar-header">
+        <div class="cal-month" id="cal-month-label"></div>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+    </div>
+
+    <div class="panel" id="events-panel">
+      <div class="panel-title">◈ Today's Schedule</div>
+      <div id="events-list"></div>
+    </div>
+
+    <div class="panel" id="status-panel">
+      <div class="panel-title">◈ System Status</div>
+      <div class="status-row">
+        <span class="status-label">CAMERA</span>
+        <span class="status-val" id="cam-status">OFFLINE</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">AI ENGINE</span>
+        <span class="status-val" id="ai-status">DEMO MODE</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">VOICE</span>
+        <span class="status-val" id="voice-status">READY</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">PHOTOS</span>
+        <span class="status-val" id="photo-count">0 CAPTURED</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER: CAMERA -->
+  <div id="center-panel" class="panel">
+    <div id="camera-off">
+      <div class="cam-icon">◉</div>
+      <div style="font-size:12px;color:var(--text-dim);letter-spacing:1px;text-align:center;">MIRROR FEED<br>INACTIVE</div>
+      <button id="enable-cam-btn" onclick="enableCamera()">ENABLE MIRROR</button>
+    </div>
+    <video id="mirror-video" autoplay playsinline style="display:none"></video>
+    <canvas id="mirror-canvas"></canvas>
+    <div class="mirror-corner mc-tl"></div>
+    <div class="mirror-corner mc-tr"></div>
+    <div class="mirror-corner mc-bl"></div>
+    <div class="mirror-corner mc-br"></div>
+    <div id="scan-line"></div>
+    <div id="capture-flash"></div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div id="right-panel">
+    <div class="panel" id="music-panel">
+      <div class="panel-title">◈ Now Playing</div>
+      <div class="music-track" id="track-name">Neural Pulse</div>
+      <div class="music-artist" id="track-artist">Xyla Soundscape</div>
+      <div class="music-controls">
+        <button class="music-btn" onclick="prevTrack()">◀◀</button>
+        <button class="music-btn play-btn" id="play-btn" onclick="togglePlay()">▶</button>
+        <button class="music-btn" onclick="nextTrack()">▶▶</button>
+        <button class="music-btn" onclick="toggleMute()">🔊</button>
+      </div>
+      <div class="progress-bar" onclick="seekMusic(event)">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);margin-bottom:6px;">
+        <span id="time-current">1:12</span><span id="time-total">3:24</span>
+      </div>
+      <div class="music-waveform" id="waveform"></div>
+    </div>
+
+    <div class="panel" id="ai-panel">
+      <div class="panel-title">◈ Xyla AI</div>
+      <div id="ai-feedback"></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM BAR -->
+  <div id="bottom-bar">
+    <div class="panel" id="voice-panel">
+      <div class="panel-title">◈ Speak to Xyla</div>
+      <div class="voice-input-row">
+        <input id="text-input" type="text" placeholder="Ask Xyla anything... or just say hi" onkeydown="if(event.key==='Enter') sendMessage()" />
+        <button class="action-btn" id="mic-btn" onclick="toggleVoice()">🎤</button>
+        <button class="action-btn" onclick="sendMessage()">SEND ▶</button>
+      </div>
+      <div class="api-note" id="api-note">Demo mode — add API key to enable real AI responses</div>
+    </div>
+
+    <div class="panel" id="actions-panel">
+      <div class="panel-title">◈ Quick Actions</div>
+      <div class="quick-actions">
+        <button class="action-btn" onclick="analyseOutfit()">ANALYSE LOOK ◉</button>
+        <button class="action-btn pink" onclick="capturePhoto()">CAPTURE 📸</button>
+        <button class="action-btn gold" onclick="triggerAffirmation()">AFFIRM ✦</button>
+        <button class="action-btn" onclick="checkMakeup()">CHECK MAKEUP</button>
+      </div>
+    </div>
+
+    <div class="panel" id="affirmation-panel">
+      <div class="panel-title">◈ Today's Affirmation</div>
+      <div id="affirmation-text">Loading your affirmation...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let apiKey = null;
+let demoMode = true;
+let videoStream = null;
+let isPlaying = false;
+let isMuted = false;
+let photoCount = 0;
+let musicInterval = null;
+let musicProgress = 0;
+let speechRecognition = null;
+let isListening = false;
+let conversationHistory = [];
+
+const tracks = [
+  { name: "Neural Pulse", artist: "Xyla Soundscape", duration: "3:24", seconds: 204 },
+  { name: "Mirror Protocol", artist: "Digital Mirror", duration: "4:12", seconds: 252 },
+  { name: "Golden Hour", artist: "A.I. Sunrise", duration: "3:48", seconds: 228 },
+  { name: "Confidence.exe", artist: "Xyla Beats", duration: "2:58", seconds: 178 },
+  { name: "Glow Algorithm", artist: "NeuralWave", duration: "3:33", seconds: 213 },
+];
+let currentTrack = 0;
+
+const affirmations = [
+  "You are radiant. The world is lucky to see you today.",
+  "Your presence is a gift. Walk in that truth.",
+  "Every detail you put into yourself reflects the love you have for who you are.",
+  "You are not getting ready — you are becoming.",
+  "Today, you are exactly where you need to be. Shine anyway.",
+  "Beauty is not what you apply. It is what you carry.",
+  "You were made to take up space. Do it boldly.",
+  "The mirror does not define you. You define the mirror.",
+  "Your confidence is the best thing you could ever put on.",
+  "Today's version of you is the most powerful yet.",
+];
+
+const demoResponses = [
+  "Hey gorgeous! I can see you're getting ready. Your energy today is already incredible ✨",
+  "Looking at your current look — your jawline is perfectly highlighted. One tip: blend the edges of your foundation near your hairline just a little more.",
+  "Your outfit is giving structured elegance. The proportions work well! Consider a bold lip to elevate the whole look.",
+  "I notice great symmetry in your eye makeup today. You've got this!",
+  "Quick affirmation before you go: you are walking out into a world that's better with you in it.",
+  "Your skin looks glowing today! Make sure to set with a light powder under your eyes to lock everything in.",
+];
+let demoIdx = 0;
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+function initWithKey() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key.startsWith('sk-ant-') && !key.startsWith('sk-')) {
+    showToast('Invalid key format', 'warn');
+    return;
+  }
+  apiKey = key;
+  demoMode = false;
+  document.getElementById('api-modal').style.display = 'none';
+  document.getElementById('ai-status').textContent = 'ACTIVE';
+  document.getElementById('api-note').textContent = 'AI active — Xyla is watching and listening';
+  document.getElementById('api-note').style.borderColor = 'rgba(0,255,136,0.3)';
+  document.getElementById('api-note').style.color = 'var(--neon-green)';
+  boot();
+}
+
+function initDemo() {
+  document.getElementById('api-modal').style.display = 'none';
+  boot();
+}
+
+function boot() {
+  buildCalendar();
+  buildEvents();
+  buildWaveform();
+  startClock();
+  setAffirmation();
+  addMessage('xyla', 'Hey beautiful. I\'m Xyla — your AI mirror. Enable your camera so I can see you, or type a message to start. Let\'s make today iconic. ✨');
+  setInterval(rotatAffirmation, 15000);
+}
+
+// ═══════════════════════════════════════════
+// CLOCK
+// ═══════════════════════════════════════════
+function startClock() {
+  function update() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    const s = String(now.getSeconds()).padStart(2, '0');
+    document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    document.getElementById('date-display').textContent =
+      `${days[now.getDay()]} · ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  }
+  update();
+  setInterval(update, 1000);
+}
+
+// ═══════════════════════════════════════════
+// CALENDAR
+// ═══════════════════════════════════════════
+function buildCalendar() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('cal-month-label').textContent = `${months[month]} ${year}`;
+
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+
+  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'cal-day-name';
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const eventDays = [3, 7, 12, 18, 22, 28];
+
+  for (let i = 0; i < firstDay; i++) {
+    grid.appendChild(document.createElement('div'));
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const el = document.createElement('div');
+    el.className = 'cal-day';
+    if (d === now.getDate()) el.classList.add('today');
+    if (eventDays.includes(d)) el.classList.add('has-event');
+    el.textContent = d;
+    grid.appendChild(el);
+  }
+}
+
+function buildEvents() {
+  const events = [
+    { time: '08:30', name: 'Morning routine' },
+    { time: '10:00', name: 'Team standup' },
+    { time: '13:00', name: 'Lunch with Aisha' },
+    { time: '15:30', name: 'Client presentation' },
+    { time: '19:00', name: 'Dinner — dress up 💅' },
+  ];
+
+  const now = new Date();
+  const currentMins = now.getHours() * 60 + now.getMinutes();
+
+  const list = document.getElementById('events-list');
+  events.forEach(ev => {
+    const [h, m] = ev.time.split(':').map(Number);
+    const evMins = h * 60 + m;
+    const isPast = evMins < currentMins;
+
+    const item = document.createElement('div');
+    item.className = 'event-item';
+    item.style.opacity = isPast ? '0.4' : '1';
+    item.innerHTML = `
+      <div class="event-dot" style="${isPast ? 'background:var(--text-dim);box-shadow:none' : ''}"></div>
+      <div class="event-time">${ev.time}</div>
+      <div class="event-name">${ev.name}</div>
+    `;
+    list.appendChild(item);
+  });
+}
+
+// ═══════════════════════════════════════════
+// MUSIC
+// ═══════════════════════════════════════════
+function buildWaveform() {
+  const wf = document.getElementById('waveform');
+  wf.innerHTML = '';
+  for (let i = 0; i < 28; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'wave-bar';
+    bar.style.animationDuration = (0.3 + Math.random() * 0.7) + 's';
+    bar.style.animationDelay = (Math.random() * 0.5) + 's';
+    bar.style.height = Math.floor(20 + Math.random() * 80) + '%';
+    if (!isPlaying) bar.style.animationPlayState = 'paused';
+    wf.appendChild(bar);
+  }
+}
+
+function togglePlay() {
+  isPlaying = !isPlaying;
+  const btn = document.getElementById('play-btn');
+  btn.textContent = isPlaying ? '⏸' : '▶';
+  document.querySelectorAll('.wave-bar').forEach(b => {
+    b.style.animationPlayState = isPlaying ? 'running' : 'paused';
+  });
+  if (isPlaying) {
+    musicInterval = setInterval(() => {
+      const track = tracks[currentTrack];
+      musicProgress = Math.min(musicProgress + 1, track.seconds);
+      const pct = (musicProgress / track.seconds) * 100;
+      document.getElementById('progress-fill').style.width = pct + '%';
+      const mins = Math.floor(musicProgress / 60);
+      const secs = String(musicProgress % 60).padStart(2, '0');
+      document.getElementById('time-current').textContent = `${mins}:${secs}`;
+      if (musicProgress >= track.seconds) nextTrack();
+    }, 1000);
+  } else {
+    clearInterval(musicInterval);
+  }
+}
+
+function nextTrack() {
+  currentTrack = (currentTrack + 1) % tracks.length;
+  loadTrack();
+}
+
+function prevTrack() {
+  currentTrack = (currentTrack - 1 + tracks.length) % tracks.length;
+  loadTrack();
+}
+
+function loadTrack() {
+  const t = tracks[currentTrack];
+  musicProgress = 0;
+  document.getElementById('track-name').textContent = t.name;
+  document.getElementById('track-artist').textContent = t.artist;
+  document.getElementById('time-total').textContent = t.duration;
+  document.getElementById('time-current').textContent = '0:00';
+  document.getElementById('progress-fill').style.width = '0%';
+  buildWaveform();
+  if (isPlaying) {
+    clearInterval(musicInterval);
+    togglePlay(); togglePlay();
+  }
+}
+
+function toggleMute() {
+  isMuted = !isMuted;
+  showToast(isMuted ? 'Muted' : 'Unmuted');
+}
+
+function seekMusic(e) {
+  const bar = e.currentTarget;
+  const pct = e.offsetX / bar.offsetWidth;
+  musicProgress = Math.floor(pct * tracks[currentTrack].seconds);
+  document.getElementById('progress-fill').style.width = (pct * 100) + '%';
+}
+
+// ═══════════════════════════════════════════
+// CAMERA
+// ═══════════════════════════════════════════
+async function enableCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    videoStream = stream;
+    const video = document.getElementById('mirror-video');
+    video.srcObject = stream;
+    video.style.display = 'block';
+    document.getElementById('camera-off').style.display = 'none';
+    document.getElementById('cam-status').textContent = 'ACTIVE';
+    showToast('Mirror camera online');
+    addMessage('xyla', 'Camera connected! I can see you now. Looking good already 👀✨');
+  } catch (err) {
+    showToast('Camera access denied', 'warn');
+    addMessage('xyla', 'I couldn\'t access the camera — but you can still chat with me! Try typing or enabling camera permissions in your browser.');
+  }
+}
+
+function capturePhoto() {
+  const video = document.getElementById('mirror-video');
+  const canvas = document.createElement('canvas');
+
+  if (video.style.display === 'none' || !videoStream) {
+    showToast('Enable camera first!', 'warn');
+    return;
+  }
+
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  // Flash effect
+  const flash = document.getElementById('capture-flash');
+  flash.classList.add('flash-anim');
+  setTimeout(() => flash.classList.remove('flash-anim'), 400);
+
+  // Add to gallery
+  const img = document.createElement('img');
+  img.src = canvas.toDataURL('image/jpeg', 0.85);
+  img.className = 'gallery-thumb';
+  img.title = 'Click to download';
+  img.onclick = () => {
+    const a = document.createElement('a');
+    a.href = img.src;
+    a.download = `xyla_${Date.now()}.jpg`;
+    a.click();
+  };
+  document.getElementById('gallery').prepend(img);
+
+  photoCount++;
+  document.getElementById('photo-count').textContent = `${photoCount} CAPTURED`;
+  showToast('Photo captured! Click thumbnail to save.');
+  addMessage('xyla', `Captured! 📸 Photo ${photoCount} saved. You can click the thumbnail on the right to download it.`);
+}
+
+// ═══════════════════════════════════════════
+// AI MESSAGES
+// ═══════════════════════════════════════════
+function addMessage(role, text) {
+  const feed = document.getElementById('ai-feedback');
+  const msg = document.createElement('div');
+  msg.className = `ai-message ${role}`;
+  msg.innerHTML = `
+    <div class="msg-label ${role}">${role === 'xyla' ? '◈ XYLA' : '◦ YOU'}</div>
+    <div>${text}</div>
+  `;
+  feed.appendChild(msg);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function showTyping() {
+  const feed = document.getElementById('ai-feedback');
+  const indicator = document.createElement('div');
+  indicator.id = 'typing';
+  indicator.className = 'typing-indicator';
+  indicator.innerHTML = `<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>`;
+  feed.appendChild(indicator);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function hideTyping() {
+  const el = document.getElementById('typing');
+  if (el) el.remove();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('text-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  addMessage('user', msg);
+  showTyping();
+
+  if (demoMode || !apiKey) {
+    setTimeout(() => {
+      hideTyping();
+      addMessage('xyla', demoResponses[demoIdx % demoResponses.length]);
+      demoIdx++;
+    }, 1200 + Math.random() * 800);
+    return;
+  }
+
+  await callClaude(msg);
+}
+
+async function callClaude(userMsg, systemExtra = '') {
+  conversationHistory.push({ role: 'user', content: userMsg });
+
+  const systemPrompt = `You are Xyla, a warm, empowering, futuristic AI mirror assistant. You exist to help women feel confident, beautiful, and prepared. You give makeup and outfit feedback, affirmations, style tips, and friendly conversation. Be concise (2-4 sentences), warm, and occasionally use light emojis. Never be harsh. Always uplifting. ${systemExtra}`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        system: systemPrompt,
+        messages: conversationHistory
+      })
+    });
+
+    const data = await response.json();
+    hideTyping();
+
+    if (data.error) {
+      addMessage('xyla', 'I had trouble connecting. Check your API key in the status panel.');
+      return;
+    }
+
+    const reply = data.content[0].text;
+    conversationHistory.push({ role: 'assistant', content: reply });
+    addMessage('xyla', reply);
+  } catch (err) {
+    hideTyping();
+    addMessage('xyla', 'Connection hiccup! Make sure your API key is valid. I\'m still here for you ✨');
+  }
+}
+
+async function analyseOutfit() {
+  const video = document.getElementById('mirror-video');
+  if (video.style.display === 'none' || !videoStream) {
+    showToast('Enable camera first!', 'warn');
+    addMessage('xyla', 'I need to see you first! Enable the mirror camera so I can analyse your look 👀');
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.save(); ctx.scale(-1, 1);
+  ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  const imageData = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+  addMessage('user', '[Sent mirror selfie for outfit analysis]');
+  showTyping();
+
+  if (demoMode || !apiKey) {
+    setTimeout(() => {
+      hideTyping();
+      addMessage('xyla', 'Outfit check complete! ✨ Your silhouette is balanced — the top and bottom proportions work really well together. One suggestion: a belt or waist accessory could define your shape even more. Overall? You are READY.');
+    }, 1800);
+    return;
+  }
+
+  conversationHistory.push({
+    role: 'user',
+    content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData }},
+      { type: 'text', text: 'Please analyse my outfit and overall look. Give me specific, kind feedback on what looks great and one or two practical tips to elevate it further.' }
+    ]
+  });
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 400,
+        system: 'You are Xyla, a warm empowering AI mirror. Analyse the outfit/look in the image and give kind, specific, actionable feedback. Keep it to 3-5 sentences. Be uplifting.',
+        messages: conversationHistory
+      })
+    });
+
+    const data = await response.json();
+    hideTyping();
+    const reply = data.content[0].text;
+    conversationHistory.push({ role: 'assistant', content: reply });
+    addMessage('xyla', reply);
+  } catch (e) {
+    hideTyping();
+    addMessage('xyla', 'Couldn\'t process the image right now. Try again in a moment!');
+  }
+}
+
+async function checkMakeup() {
+  const video = document.getElementById('mirror-video');
+  if (video.style.display === 'none' || !videoStream) {
+    showToast('Enable camera first!', 'warn');
+    addMessage('xyla', 'Enable the mirror camera so I can check your makeup up close 💄');
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.save(); ctx.scale(-1, 1);
+  ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  const imageData = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+  addMessage('user', '[Sent close-up for makeup analysis]');
+  showTyping();
+
+  if (demoMode || !apiKey) {
+    setTimeout(() => {
+      hideTyping();
+      addMessage('xyla', 'Makeup scan done! 💄 Your eye makeup is blended really well on the outer corner. Just check the inner corner of your right eye — a tiny bit of shadow may have transferred. Your lips look perfect. You\'re 95% there!');
+    }, 2000);
+    return;
+  }
+
+  conversationHistory.push({
+    role: 'user',
+    content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData }},
+      { type: 'text', text: 'Check my makeup carefully. Look for any missed spots, blending issues, asymmetry, or anything I might have overlooked. Be kind but honest and specific.' }
+    ]
+  });
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 400,
+        system: 'You are Xyla, a makeup-savvy AI mirror. Analyse the makeup in the image carefully and kindly. Point out what looks great and any specific spots to fix. 3-5 sentences max.',
+        messages: conversationHistory
+      })
+    });
+
+    const data = await response.json();
+    hideTyping();
+    const reply = data.content[0].text;
+    conversationHistory.push({ role: 'assistant', content: reply });
+    addMessage('xyla', reply);
+  } catch (e) {
+    hideTyping();
+    addMessage('xyla', 'Image analysis ran into an issue. Try again!');
+  }
+}
+
+// ═══════════════════════════════════════════
+// AFFIRMATIONS
+// ═══════════════════════════════════════════
+let affirmIdx = 0;
+
+function setAffirmation() {
+  document.getElementById('affirmation-text').textContent = affirmations[affirmIdx % affirmations.length];
+}
+
+function rotatAffirmation() {
+  affirmIdx = (affirmIdx + 1) % affirmations.length;
+  const el = document.getElementById('affirmation-text');
+  el.style.opacity = '0';
+  setTimeout(() => {
+    el.textContent = affirmations[affirmIdx];
+    el.style.transition = 'opacity 1s';
+    el.style.opacity = '1';
+  }, 500);
+}
+
+async function triggerAffirmation() {
+  if (demoMode || !apiKey) {
+    const a = affirmations[Math.floor(Math.random() * affirmations.length)];
+    addMessage('xyla', `✦ ${a}`);
+    document.getElementById('affirmation-text').textContent = a;
+    return;
+  }
+
+  showTyping();
+  await callClaude('Give me a powerful personalised affirmation to start my day with confidence. Make it feel personal and specific to getting ready and showing up powerfully in the world.');
+}
+
+// ═══════════════════════════════════════════
+// VOICE
+// ═══════════════════════════════════════════
+function toggleVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('Voice not supported in this browser', 'warn');
+    return;
+  }
+
+  if (isListening) {
+    speechRecognition?.stop();
+    isListening = false;
+    document.getElementById('mic-btn').classList.remove('listening');
+    document.getElementById('voice-status').textContent = 'READY';
+    return;
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  speechRecognition = new SR();
+  speechRecognition.continuous = false;
+  speechRecognition.interimResults = false;
+  speechRecognition.lang = 'en-ZA';
+
+  speechRecognition.onstart = () => {
+    isListening = true;
+    document.getElementById('mic-btn').classList.add('listening');
+    document.getElementById('voice-status').textContent = 'LISTENING';
+    showToast('Listening...');
+  };
+
+  speechRecognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    document.getElementById('text-input').value = transcript;
+    sendMessage();
+  };
+
+  speechRecognition.onend = () => {
+    isListening = false;
+    document.getElementById('mic-btn').classList.remove('listening');
+    document.getElementById('voice-status').textContent = 'READY';
+  };
+
+  speechRecognition.onerror = () => {
+    isListening = false;
+    document.getElementById('mic-btn').classList.remove('listening');
+    document.getElementById('voice-status').textContent = 'READY';
+  };
+
+  speechRecognition.start();
+}
+
+// ═══════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════
+function showToast(msg, type = 'ok') {
+  const toast = document.getElementById('toast');
+  toast.textContent = (type === 'warn' ? '⚠ ' : '✓ ') + msg;
+  toast.style.borderColor = type === 'warn' ? 'var(--neon-gold)' : 'var(--neon-green)';
+  toast.style.color = type === 'warn' ? 'var(--neon-gold)' : 'var(--neon-green)';
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
